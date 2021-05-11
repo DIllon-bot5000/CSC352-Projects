@@ -1,0 +1,127 @@
+#!/bin/bash
+
+# Author: Dillon Barr
+# Program: testCode
+# Course: CSC 352
+# Purpose: This is a bash script that runs an two executables and puts them through a series of
+# testcases to see if the submitted executable passes all the testcases.
+
+mypath=$1
+currentdirectory=$(pwd)
+if [ -z $mypath ]; then
+  read MYPATH
+  
+  if [ ! $? -eq 0 ]; then
+    echo "Error: Cannot read file name" >&2
+    exit 1
+  
+  fi
+fi
+
+if [[ ! -x ${mypath} ]]; then
+  echo "Error: source program given is not executable" >&2
+  exit 1
+
+fi
+
+testdirectory=$2
+
+if [ -z $testdirectory ]; then
+  read TDIRECTORY
+  
+  if [ ! $? -eq 0 ]; then
+    echo "Error: Cannot read testcase directory" >&2
+    exit 1
+  
+  fi
+fi
+
+if [ ! -d $testdirectory ]; then
+  echo "Error: invalid directory" >&2
+  exit 1
+
+fi
+
+pushd $testdirectory >/dev/null
+
+program=${mypath##*/}
+execprogram=ex_${program}
+
+if [[ ! -x $execprogram ]]; then
+  echo "Error: referenced program is not executable" >&2
+  exit 1
+
+fi
+
+testcases=$(ls -1 test_${program}*)
+
+for tests in $testcases; do
+
+  {
+  timeout 2s ${currentdirectory}/${program} <${tests} >myOut 2>myErr
+  } &>/dev/null
+
+  TIMEOUT=$?
+
+  if [ $TIMEOUT -ge 128 ]; then
+    echo "*** testcase: ${tests} [ FAILED - Abnormal termination ]"
+  
+  elif [ $TIMEOUT -eq 124 ]; then
+    echo "*** testcase: ${tests} [ FAILED - Timed out ]"
+
+  else
+    $execprogram <${tests} >exOut 2>exErr
+    execreturn=$?
+    
+    diff myOut exOut >/dev/null
+    diffresult=$?
+    
+    if [ $diffresult -eq 0 ]; then
+      echo "*** testcase: ${tests} [ stdout - PASSED ]"
+    
+    else
+      echo "*** testcase: ${tests} [ stdout - FAILED ]"
+    fi
+
+    if [ $TIMEOUT -eq $execreturn ]; then
+      echo "*** testcase: ${tests} [ return code - PASSED ]"
+    
+    else
+      echo "*** testcase: ${tests} [ return code - FAILED ]"
+    fi
+
+    if [ -s myErr ]; then
+      if [ -s exErr ]; then
+        echo "*** testcase: ${tests} [ stderr - PASSED ]"
+      else
+        echo "*** testcase: ${tests} [ stderr - FAILED ]"
+      fi
+    
+    else
+      if [ -s exErr ]; then
+        echo "*** testcase: ${tests} [ stderr - FAILED ]"
+      else
+        echo "*** testcase: ${tests} [ stderr - PASSED ]"
+      fi
+  fi
+
+  valgrind --error-exitcode=123 ${currentdirectory}/${program} <$tests &>valgrindOut
+  var1=`grep "ERROR SUMMARY: 0" valgrindOut`
+  var2=`grep "All heaps were freed" valgrindOut`
+  if [ -z "$var1" ]; then
+    echo "*** testcase: ${tests} [ valgrind - FAILED ]"
+  else
+    echo "*** testcase: ${tests} [ valgrind - PASSED ]"
+  fi
+
+  if [ -z "$var2" ]; then
+    echo "*** testcase: ${tests} [ memory free - PASSED ]"
+  else 
+    echo "*** testcase: ${tests} [ memory free - FAILED ]"
+  fi
+
+fi
+
+done
+
+popd >/dev/null
